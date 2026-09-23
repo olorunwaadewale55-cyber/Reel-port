@@ -1,0 +1,6 @@
+{
+  "name": "Nightwire Video Studio",
+  "description": "High-performance video streaming & direct-to-storage upload platform powered by Cloudflare R2, Supabase, and client canvas processing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
