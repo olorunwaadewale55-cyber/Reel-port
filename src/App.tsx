@@ -57,7 +57,9 @@ import {
   Play,
   GripVertical,
   CheckCircle2,
-  ListOrdered
+  ListOrdered,
+  WifiOff,
+  Wifi
 } from 'lucide-react';
 
 export default function App() {
@@ -71,6 +73,12 @@ export default function App() {
   const [isArchitectureOpen, setIsArchitectureOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [reorderNotification, setReorderNotification] = useState<string | null>(null);
+
+  // Network connection monitor (navigator.onLine)
+  const [isOnline, setIsOnline] = useState<boolean>(() => {
+    return typeof navigator !== 'undefined' ? navigator.onLine : true;
+  });
+  const [showReconnectedBanner, setShowReconnectedBanner] = useState(false);
 
   // Authentication state (supports Supabase magic-link & local testing)
   const [currentUser, setCurrentUserState] = useState<User | null>(() => {
@@ -119,6 +127,31 @@ export default function App() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Monitor connection to the streaming backend via navigator.onLine
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setShowReconnectedBanner(true);
+      const timer = setTimeout(() => {
+        setShowReconnectedBanner(false);
+      }, 4000);
+      return () => clearTimeout(timer);
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setShowReconnectedBanner(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   // Handle Magic Link Sign In request
@@ -331,6 +364,73 @@ export default function App() {
         }}
         supabaseConfig={supabaseConfig}
       />
+
+      {/* Non-intrusive banner for streaming backend connection interruption */}
+      {!isOnline && (
+        <aside
+          role="alert"
+          aria-live="assertive"
+          className="sticky top-[61px] z-30 w-full bg-amber-950/90 border-b border-amber-500/30 px-4 py-2 backdrop-blur-md transition-all shadow-sm"
+        >
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="flex items-center justify-center w-5 h-5 rounded-md bg-amber-500/20 text-amber-400 shrink-0">
+                <WifiOff className="w-3.5 h-3.5 animate-pulse" />
+              </span>
+              <div className="flex flex-wrap items-center gap-x-2 text-amber-200">
+                <span className="font-semibold text-amber-300">Connection Interrupted:</span>
+                <span className="text-neutral-300 text-[11px] sm:text-xs">
+                  Streaming backend is currently unreachable. Live playback and uploads may be interrupted.
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] text-amber-300/70">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                Listening for connection...
+              </span>
+              <button
+                onClick={() => {
+                  if (typeof navigator !== 'undefined' && navigator.onLine) {
+                    setIsOnline(true);
+                  }
+                }}
+                className="px-2.5 py-1 text-[11px] font-medium text-amber-200 hover:text-white bg-amber-900/50 hover:bg-amber-800/60 border border-amber-700/50 rounded transition-colors"
+                title="Check connection status"
+              >
+                Check status
+              </button>
+            </div>
+          </div>
+        </aside>
+      )}
+
+      {/* Brief reconnection confirmation banner */}
+      {showReconnectedBanner && isOnline && (
+        <aside
+          role="status"
+          className="sticky top-[61px] z-30 w-full bg-emerald-950/90 border-b border-emerald-500/30 px-4 py-2 backdrop-blur-md transition-all shadow-sm"
+        >
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="flex items-center justify-center w-5 h-5 rounded-md bg-emerald-500/20 text-emerald-400 shrink-0">
+                <Wifi className="w-3.5 h-3.5" />
+              </span>
+              <div className="flex items-center gap-2 text-emerald-200">
+                <span className="font-semibold text-emerald-300">Connected:</span>
+                <span className="text-neutral-300 text-[11px] sm:text-xs">Streaming backend connection restored.</span>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowReconnectedBanner(false)}
+              className="text-[11px] text-neutral-400 hover:text-white px-1.5 py-0.5"
+              aria-label="Dismiss banner"
+            >
+              &times;
+            </button>
+          </div>
+        </aside>
+      )}
 
       <div className="flex-1 flex max-w-7xl w-full mx-auto">
         {/* Left Navigation Sidebar */}
