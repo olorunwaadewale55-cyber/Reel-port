@@ -97,9 +97,6 @@ jobs:
           if [ -n "$APK_FILE" ]; then
             gh release create "$TAG_NAME" "$APK_FILE" ${AAB_FILE:+"$AAB_FILE"} \
               --title "Reelport Android App v1.0.0 (Build ${{ github.run_number }})" \
-              --notes "### Reelport Android Package Releases (Build ${{ github.run_number }})
-
-- **app-debug.apk**: Direct installable APK for side-loading onto your Android phone or emulator.
-- **app-release.aab**: Android App Bundle (AAB) optimized for submission to the **Google Play Console**." \
-              --latest || echo "Warning: GitHub release step completed with notice, artifacts preserved."
+              --notes "Reelport Android App v1.0.0 (app-debug.apk + app-release.aab)" \
+              --latest || echo "Release notice"
           fi
