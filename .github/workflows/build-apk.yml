@@ -1,0 +1,86 @@
+name: Build Android APK and Play Store AAB
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build web assets and sync Capacitor
+        run: npm run cap:build
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Make Gradle executable
+        run: chmod +x android/gradlew
+
+      - name: Build Debug APK & Play Store AAB Bundle
+        run: |
+          cd android
+          echo "Building Debug APK for direct testing..."
+          ./gradlew assembleDebug --no-daemon
+          echo "Building Release AAB Bundle for Google Play Store..."
+          ./gradlew bundleRelease --no-daemon || ./gradlew bundleDebug --no-daemon
+
+      - name: Locate Generated Files
+        run: |
+          echo "=== APK Files ==="
+          find android/app/build/outputs/apk/ -name "*.apk" || true
+          echo "=== AAB Bundles ==="
+          find android/app/build/outputs/bundle/ -name "*.aab" || true
+
+      - name: Upload APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Reelport-Android-APK
+          path: android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
+
+      - name: Upload Play Store AAB Bundle as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Reelport-PlayStore-AAB
+          path: android/app/build/outputs/bundle/**/*.aab
+          if-no-files-found: warn
+
+      - name: Create Release with Downloadable APK and Play Store AAB
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+        with:
+          tag_name: v1.0.0-android
+          name: "Reelport Android App v1.0.0 (APK + Google Play AAB)"
+          body: |
+            ### Reelport Android Package Releases
+            
+            - **`app-debug.apk`**: Direct installable APK for side-loading onto your Android phone or emulator.
+            - **`app-release.aab`**: Android App Bundle (AAB) optimized for submission to the **Google Play Console**.
+          files: |
+            android/app/build/outputs/apk/**/*.apk
+            android/app/build/outputs/bundle/**/*.aab
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

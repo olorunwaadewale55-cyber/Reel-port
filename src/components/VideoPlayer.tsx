@@ -23,13 +23,18 @@ import {
   PlayCircle,
   Link2,
   Copy,
-  X
+  X,
+  HeartHandshake,
+  Tv,
+  DollarSign
 } from 'lucide-react';
-import { Video, Comment, User } from '../types';
+import { Video, Comment, User, Tip } from '../types';
 import { CommentSection } from './CommentSection';
+import { TipModal } from './TipModal';
 import { 
   saveVideoWatchProgress, 
-  getVideoWatchProgress 
+  getVideoWatchProgress,
+  getTipsForVideo
 } from '../lib/storage';
 
 interface VideoPlayerProps {
@@ -66,13 +71,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareFeedbackMsg, setShareFeedbackMsg] = useState<string | null>(null);
+  const [isTipOpen, setIsTipOpen] = useState(false);
+  const [tipsCount, setTipsCount] = useState<number>(() => getTipsForVideo(video.id).length);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [resumedFromSeconds, setResumedFromSeconds] = useState<number | null>(null);
   const [showResumeBanner, setShowResumeBanner] = useState(false);
-  const [shortcutFeedback, setShortcutFeedback] = useState<{ icon: 'play' | 'pause' | 'mute' | 'unmute' | 'fullscreen'; label: string } | null>(null);
+  const [shortcutFeedback, setShortcutFeedback] = useState<{ icon: 'play' | 'pause' | 'mute' | 'unmute' | 'fullscreen' | 'window'; label: string } | null>(null);
   const feedbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const triggerFeedback = (icon: 'play' | 'pause' | 'mute' | 'unmute' | 'fullscreen', label: string) => {
+  const triggerFeedback = (icon: 'play' | 'pause' | 'mute' | 'unmute' | 'fullscreen' | 'window', label: string) => {
     setShortcutFeedback({ icon, label });
     if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     feedbackTimeoutRef.current = setTimeout(() => {
@@ -197,16 +204,44 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().catch((err) => console.error(err));
-      triggerFeedback('fullscreen', 'Fullscreen');
-    } else {
-      document.exitFullscreen().catch((err) => console.error(err));
+    if (document.fullscreenElement || isFullscreen) {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+      setIsFullscreen(false);
       triggerFeedback('fullscreen', 'Exit Fullscreen');
+    } else {
+      if (containerRef.current.requestFullscreen) {
+        containerRef.current
+          .requestFullscreen()
+          .then(() => setIsFullscreen(true))
+          .catch(() => {
+            // Fallback for iframes or restricted fullscreen environments
+            setIsFullscreen(true);
+          });
+      } else {
+        setIsFullscreen(true);
+      }
+      triggerFeedback('fullscreen', 'Fullscreen');
     }
   };
 
-  // Global keyboard shortcuts: Space (Play/Pause), M (Mute/Unmute), F (Fullscreen)
+  const togglePiP = async () => {
+    if (!videoRef.current) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+        triggerFeedback('window', 'Exited Pop-out');
+      } else if (document.pictureInPictureEnabled) {
+        await videoRef.current.requestPictureInPicture();
+        triggerFeedback('window', 'Pop-out Window (PiP)');
+      }
+    } catch (err) {
+      console.warn('PiP not available or permission denied', err);
+    }
+  };
+
+  // Global keyboard shortcuts: Space (Play/Pause), M (Mute/Unmute), F (Fullscreen), P (Pop-out Window)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore shortcut when typing in inputs, textareas, or contentEditable elements
@@ -227,6 +262,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       } else if (e.code === 'KeyF') {
         e.preventDefault();
         toggleFullscreen();
+      } else if (e.code === 'KeyP') {
+        e.preventDefault();
+        togglePiP();
+      } else if (e.code === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
       }
     };
 
@@ -306,7 +346,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             ref={containerRef}
             onMouseMove={handleMouseMove}
             onMouseLeave={() => isPlaying && setShowControls(false)}
-            className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-neutral-800 group select-none"
+            className={`relative w-full ${
+              isFullscreen
+                ? 'fixed inset-0 z-50 rounded-none w-screen h-screen max-w-none border-none'
+                : 'aspect-video rounded-2xl shadow-2xl border border-neutral-800'
+            } bg-black overflow-hidden group select-none transition-all duration-200`}
           >
             {/* HTML5 Native Range-Request Video */}
             <video
@@ -451,6 +495,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     ))}
                   </div>
 
+                  {/* Pop-out Picture-in-Picture Window (P) */}
+                  <button
+                    onClick={togglePiP}
+                    className="p-1.5 text-neutral-300 hover:text-white transition-colors"
+                    title="Pop-out Floating Window (P)"
+                  >
+                    <Tv className="w-4 h-4" />
+                  </button>
+
                   {/* Fullscreen button */}
                   <button
                     onClick={toggleFullscreen}
@@ -472,6 +525,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   {shortcutFeedback.icon === 'mute' && <VolumeX className="w-8 h-8 text-red-400" />}
                   {shortcutFeedback.icon === 'unmute' && <Volume2 className="w-8 h-8 text-emerald-400" />}
                   {shortcutFeedback.icon === 'fullscreen' && <Maximize className="w-8 h-8 text-cyan-400" />}
+                  {shortcutFeedback.icon === 'window' && <Tv className="w-8 h-8 text-blue-400" />}
                   <span className="text-xs font-semibold tracking-wide uppercase font-mono text-neutral-300">
                     {shortcutFeedback.label}
                   </span>
@@ -615,6 +669,21 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 >
                   {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
                   <span>{copiedLink ? 'Copied Link!' : 'Share'}</span>
+                </button>
+
+                {/* Send Money & Tip Creator */}
+                <button
+                  onClick={() => setIsTipOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/20 border border-amber-500/50 text-amber-300 hover:from-amber-500/30 hover:to-orange-500/30 shadow-sm shadow-amber-500/10 hover:shadow-amber-500/20 transition-all"
+                  title="Send money and Super Thanks to creator"
+                >
+                  <HeartHandshake className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Send Tip</span>
+                  {tipsCount > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500/30 text-amber-200 font-mono">
+                      {tipsCount}
+                    </span>
+                  )}
                 </button>
 
                 <a
@@ -837,6 +906,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
         </div>
       )}
+
+      {/* Tip & Send Money Modal */}
+      <TipModal
+        isOpen={isTipOpen}
+        onClose={() => setIsTipOpen(false)}
+        video={video}
+        currentUser={currentUser}
+        onTipSent={() => setTipsCount((prev) => prev + 1)}
+      />
     </div>
   );
 };

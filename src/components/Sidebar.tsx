@@ -15,7 +15,9 @@ import {
   Cpu, 
   Music, 
   Gamepad2, 
-  BookOpen
+  BookOpen,
+  Smartphone,
+  Monitor
 } from 'lucide-react';
 import { R2Config, SupabaseConfig } from '../types';
 
@@ -27,6 +29,8 @@ interface SidebarProps {
   r2Config: R2Config;
   supabaseConfig: SupabaseConfig;
   videoCount: number;
+  onOpenAndroid?: () => void;
+  onOpenWindows?: () => void;
 }
 
 export const CATEGORIES = [
@@ -47,6 +51,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   r2Config,
   supabaseConfig,
   videoCount,
+  onOpenAndroid,
+  onOpenWindows,
 }) => {
   return (
     <aside className="w-64 flex-shrink-0 hidden md:flex flex-col gap-6 py-6 px-4 border-r border-neutral-800/80 bg-neutral-950/60 min-h-[calc(100vh-65px)]">
@@ -149,6 +155,52 @@ export const Sidebar: React.FC<SidebarProps> = ({
           );
         })}
       </div>
+
+      {/* Android Mobile Banner */}
+      {onOpenAndroid && (
+        <button
+          onClick={onOpenAndroid}
+          className="w-full p-3 rounded-xl bg-gradient-to-r from-emerald-950/40 to-cyan-950/40 border border-emerald-800/40 hover:border-emerald-600/70 transition-all text-left flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+              <Smartphone className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-emerald-300 group-hover:text-emerald-200">
+                Android App
+              </p>
+              <p className="text-[10px] text-neutral-400">Install APK & PWA</p>
+            </div>
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 font-mono font-medium">
+            Ready
+          </span>
+        </button>
+      )}
+
+      {/* Windows Desktop Banner */}
+      {onOpenWindows && (
+        <button
+          onClick={onOpenWindows}
+          className="w-full p-3 rounded-xl bg-gradient-to-r from-blue-950/40 to-cyan-950/40 border border-blue-800/40 hover:border-blue-600/70 transition-all text-left flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center">
+              <Monitor className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-blue-300 group-hover:text-blue-200">
+                Windows App
+              </p>
+              <p className="text-[10px] text-neutral-400">Desktop & Window</p>
+            </div>
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-900/60 text-blue-300 font-mono font-medium">
+            Ready
+          </span>
+        </button>
+      )}
 
       {/* Live Free-Tier Architecture Badge */}
       <div className="mt-auto p-3.5 bg-neutral-900/80 border border-neutral-800 rounded-xl space-y-3">

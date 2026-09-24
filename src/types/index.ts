@@ -69,3 +69,27 @@ export interface ThumbnailCandidate {
   dataUrl: string;
   label: string;
 }
+
+export interface Tip {
+  id: string;
+  videoId: string;
+  videoTitle: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar: string;
+  recipientId: string;
+  recipientName: string;
+  amount: number;
+  currency: string;
+  message?: string;
+  paymentMethod: 'card' | 'paypal' | 'cashapp' | 'crypto';
+  created_at: string;
+}
+
+export interface CreatorPayout {
+  creatorId: string;
+  paypalEmail?: string;
+  cashAppTag?: string;
+  cryptoAddress?: string;
+  stripeConnected?: boolean;
+}

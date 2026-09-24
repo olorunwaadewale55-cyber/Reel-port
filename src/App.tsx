@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { Navbar } from './components/Navbar';
 import { Sidebar, CATEGORIES } from './components/Sidebar';
 import { VideoCard } from './components/VideoCard';
@@ -7,6 +8,8 @@ import { VideoPlayer } from './components/VideoPlayer';
 import { UploadModal } from './components/UploadModal';
 import { ArchitectureModal } from './components/ArchitectureModal';
 import { SettingsModal } from './components/SettingsModal';
+import { AndroidModal } from './components/AndroidModal';
+import { WindowsModal } from './components/WindowsModal';
 import { Video, R2Config, SupabaseConfig, User } from './types';
 import { 
   getStoredVideos, 
@@ -72,6 +75,8 @@ export default function App() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isArchitectureOpen, setIsArchitectureOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAndroidOpen, setIsAndroidOpen] = useState(false);
+  const [isWindowsOpen, setIsWindowsOpen] = useState(false);
   const [reorderNotification, setReorderNotification] = useState<string | null>(null);
 
   // Network connection monitor (navigator.onLine)
@@ -354,6 +359,8 @@ export default function App() {
         onOpenUpload={() => setIsUploadOpen(true)}
         onOpenArchitecture={() => setIsArchitectureOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenAndroid={() => setIsAndroidOpen(true)}
+        onOpenWindows={() => setIsWindowsOpen(true)}
         currentUser={currentUser}
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
@@ -448,6 +455,8 @@ export default function App() {
           r2Config={r2Config}
           supabaseConfig={supabaseConfig}
           videoCount={filteredVideos.length}
+          onOpenAndroid={() => setIsAndroidOpen(true)}
+          onOpenWindows={() => setIsWindowsOpen(true)}
         />
 
         {/* Main Content Area */}
@@ -715,6 +724,19 @@ export default function App() {
         onUpdateR2={setR2Config}
         onUpdateSupabase={setSupabaseConfig}
       />
+
+      <AndroidModal
+        isOpen={isAndroidOpen}
+        onClose={() => setIsAndroidOpen(false)}
+      />
+
+      <WindowsModal
+        isOpen={isWindowsOpen}
+        onClose={() => setIsWindowsOpen(false)}
+      />
+
+      {/* Vercel Web Analytics */}
+      <Analytics />
     </div>
   );
 }

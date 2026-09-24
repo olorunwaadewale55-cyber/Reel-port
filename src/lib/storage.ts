@@ -1,4 +1,4 @@
-import { Video, Comment, User, R2Config, SupabaseConfig } from '../types';
+import { Video, Comment, User, R2Config, SupabaseConfig, Tip, CreatorPayout } from '../types';
 
 const STORAGE_KEYS = {
   VIDEOS: 'nightwire_videos_v2',
@@ -10,6 +10,9 @@ const STORAGE_KEYS = {
   SAVED_VIDEOS: 'nightwire_saved_ids',
   WATCH_HISTORY: 'nightwire_history_ids',
   WATCH_PROGRESS: 'nightwire_watch_progress',
+  TIPS: 'nightwire_tips_v1',
+  CREATOR_PAYOUTS: 'nightwire_creator_payouts_v1',
+  RECENT_SEARCHES: 'nightwire_recent_searches_v1',
 };
 
 export const DEFAULT_USER: User = {
@@ -412,3 +415,172 @@ export function getVideoWatchProgress(videoId: string): { currentTime: number; d
     return null;
   }
 }
+
+export const INITIAL_TIPS: Tip[] = [
+  {
+    id: 'tip_demo_1',
+    videoId: 'vid_r2_zero_egress',
+    videoTitle: 'Architecting Zero-Egress Video Streaming',
+    senderId: 'usr_sarah_c',
+    senderName: 'Sarah Connor',
+    senderAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=256&h=256&q=80',
+    recipientId: 'usr_nw_dev01',
+    recipientName: 'Alex Vance',
+    amount: 10,
+    currency: 'USD',
+    message: 'Incredible breakdown on Cloudflare R2 presigned URLs! Saved us $500/mo on AWS S3 egress.',
+    paymentMethod: 'card',
+    created_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+  },
+  {
+    id: 'tip_demo_2',
+    videoId: 'vid_r2_zero_egress',
+    videoTitle: 'Architecting Zero-Egress Video Streaming',
+    senderId: 'usr_kenji_s',
+    senderName: 'Kenji Sato',
+    senderAvatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=256&h=256&q=80',
+    recipientId: 'usr_nw_dev01',
+    recipientName: 'Alex Vance',
+    amount: 25,
+    currency: 'USD',
+    message: 'Super Thanks from Tokyo! Keep releasing these full-stack architectures.',
+    paymentMethod: 'paypal',
+    created_at: new Date(Date.now() - 1000 * 60 * 360).toISOString(),
+  },
+  {
+    id: 'tip_demo_3',
+    videoId: 'vid_cyberpunk_neon',
+    videoTitle: 'Night City District 07: Ray Traced Cyberpunk Ambient Walkthrough',
+    senderId: 'usr_david_m',
+    senderName: 'David Miller',
+    senderAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=256&h=256&q=80',
+    recipientId: 'usr_neon_pilot',
+    recipientName: 'Neon Runner',
+    amount: 5,
+    currency: 'USD',
+    message: 'The audio mixing on this rain scene is pure bliss ☕',
+    paymentMethod: 'cashapp',
+    created_at: new Date(Date.now() - 1000 * 60 * 720).toISOString(),
+  }
+];
+
+export function getStoredTips(): Tip[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.TIPS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.TIPS, JSON.stringify(INITIAL_TIPS));
+      return INITIAL_TIPS;
+    }
+    return JSON.parse(raw);
+  } catch {
+    return INITIAL_TIPS;
+  }
+}
+
+export function sendTip(tipData: Omit<Tip, 'id' | 'created_at'>): Tip {
+  const tips = getStoredTips();
+  const newTip: Tip = {
+    ...tipData,
+    id: `tip_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    created_at: new Date().toISOString(),
+  };
+
+  const updated = [newTip, ...tips];
+  localStorage.setItem(STORAGE_KEYS.TIPS, JSON.stringify(updated));
+  return newTip;
+}
+
+export function getTipsForVideo(videoId: string): Tip[] {
+  return getStoredTips().filter((t) => t.videoId === videoId);
+}
+
+export function getTipsForCreator(creatorId: string): Tip[] {
+  return getStoredTips().filter((t) => t.recipientId === creatorId);
+}
+
+export function getCreatorBalance(creatorId: string): number {
+  return getTipsForCreator(creatorId).reduce((sum, tip) => sum + tip.amount, 0);
+}
+
+export function getCreatorPayout(creatorId: string): CreatorPayout {
+  try {
+    const raw = localStorage.getItem(`${STORAGE_KEYS.CREATOR_PAYOUTS}_${creatorId}`);
+    if (!raw) {
+      return {
+        creatorId,
+        paypalEmail: 'creator@reelport.app',
+        cashAppTag: '$ReelportCreator',
+        cryptoAddress: '0x71C...4982',
+        stripeConnected: true,
+      };
+    }
+    return JSON.parse(raw);
+  } catch {
+    return { creatorId };
+  }
+}
+
+export function saveCreatorPayout(payout: CreatorPayout): void {
+  localStorage.setItem(`${STORAGE_KEYS.CREATOR_PAYOUTS}_${payout.creatorId}`, JSON.stringify(payout));
+}
+
+const DEFAULT_RECENT_SEARCHES: string[] = [
+  'Cloudflare R2',
+  'Zero Egress',
+  'Cyberpunk',
+  'Supabase',
+  'Next.js',
+  'Ray Traced',
+  'Synthwave',
+];
+
+export function getRecentSearches(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.RECENT_SEARCHES);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.RECENT_SEARCHES, JSON.stringify(DEFAULT_RECENT_SEARCHES));
+      return DEFAULT_RECENT_SEARCHES;
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : DEFAULT_RECENT_SEARCHES;
+  } catch {
+    return DEFAULT_RECENT_SEARCHES;
+  }
+}
+
+export function saveRecentSearch(query: string): string[] {
+  const trimmed = query.trim();
+  if (!trimmed) return getRecentSearches();
+
+  const current = getRecentSearches();
+  const filtered = current.filter((item) => item.toLowerCase() !== trimmed.toLowerCase());
+  const updated = [trimmed, ...filtered].slice(0, 10);
+
+  try {
+    localStorage.setItem(STORAGE_KEYS.RECENT_SEARCHES, JSON.stringify(updated));
+  } catch (err) {
+    console.error('Failed to save recent search query', err);
+  }
+  return updated;
+}
+
+export function removeRecentSearch(query: string): string[] {
+  const current = getRecentSearches();
+  const updated = current.filter((item) => item.toLowerCase() !== query.toLowerCase().trim());
+  try {
+    localStorage.setItem(STORAGE_KEYS.RECENT_SEARCHES, JSON.stringify(updated));
+  } catch (err) {
+    console.error('Failed to remove recent search query', err);
+  }
+  return updated;
+}
+
+export function clearRecentSearches(): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.RECENT_SEARCHES, JSON.stringify([]));
+  } catch (err) {
+    console.error('Failed to clear recent searches', err);
+  }
+}
+
+
