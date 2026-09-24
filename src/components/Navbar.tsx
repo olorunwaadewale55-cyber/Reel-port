@@ -8,6 +8,8 @@ import {
   Zap,
   LogIn,
   LogOut,
+  UserPlus,
+  User as UserIcon,
   Mail,
   Radio,
   CheckCircle2,
@@ -37,8 +39,10 @@ interface NavbarProps {
   onOpenSettings: () => void;
   onOpenAndroid: () => void;
   onOpenWindows: () => void;
+  onOpenSignIn: () => void;
+  onOpenSignUp: () => void;
+  onOpenProfile: () => void;
   currentUser: User | null;
-  onSignIn: (email: string) => Promise<{ success: boolean; message: string }>;
   onSignOut: () => void;
   onNavigateHome: () => void;
   supabaseConfig: SupabaseConfig;
@@ -52,19 +56,14 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSettings,
   onOpenAndroid,
   onOpenWindows,
+  onOpenSignIn,
+  onOpenSignUp,
+  onOpenProfile,
   currentUser,
-  onSignIn,
   onSignOut,
   onNavigateHome,
   supabaseConfig,
 }) => {
-  const [showAuthDropdown, setShowAuthDropdown] = useState(false);
-  const [emailInput, setEmailInput] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const [authStatusMessage, setAuthStatusMessage] = useState<{ text: string; type: 'info' | 'success' | 'error' } | null>(null);
-
-  const authDropdownRef = useRef<HTMLDivElement>(null);
-
   // Search suggestions state
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>(() => getRecentSearches());
@@ -171,41 +170,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     );
   };
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (authDropdownRef.current && !authDropdownRef.current.contains(e.target as Node)) {
-        setShowAuthDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleSendMagicLink = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!emailInput.trim()) return;
-
-    setIsSending(true);
-    setAuthStatusMessage({ text: 'Sending magic link...', type: 'info' });
-
-    try {
-      const result = await onSignIn(emailInput.trim());
-      if (result.success) {
-        setAuthStatusMessage({ text: result.message, type: 'success' });
-        setTimeout(() => {
-          setShowAuthDropdown(false);
-          setAuthStatusMessage(null);
-        }, 3500);
-      } else {
-        setAuthStatusMessage({ text: result.message, type: 'error' });
-      }
-    } catch (err: any) {
-      setAuthStatusMessage({ text: err.message || 'Failed to send login link', type: 'error' });
-    } finally {
-      setIsSending(false);
-    }
-  };
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-neutral-800/80 bg-neutral-950/85 backdrop-blur-md px-4 sm:px-6 py-3">
@@ -408,121 +372,63 @@ export const Navbar: React.FC<NavbarProps> = ({
               {/* Broadcast / Direct Upload button */}
               <button
                 onClick={onOpenUpload}
-                className="flex items-center gap-2 px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-neutral-950 bg-gradient-to-r from-cyan-400 to-blue-400 rounded-lg hover:from-cyan-300 hover:to-blue-300 shadow-md shadow-cyan-500/20 hover:shadow-cyan-500/30 transition-all"
+                className="flex items-center gap-2 px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-neutral-950 bg-gradient-to-r from-cyan-400 to-blue-400 rounded-lg hover:from-cyan-300 hover:to-blue-300 shadow-md shadow-cyan-500/20 hover:shadow-cyan-500/30 transition-all cursor-pointer"
                 title="Upload directly to Cloudflare R2"
               >
                 <Radio className="w-4 h-4 animate-pulse text-neutral-950" />
                 <span className="font-bold">Broadcast</span>
               </button>
 
-              {/* User Avatar + Sign Out */}
-              <div className="flex items-center gap-2 pl-2 border-l border-neutral-800">
+              {/* Clickable User Profile Pill */}
+              <button
+                onClick={onOpenProfile}
+                className="flex items-center gap-2.5 p-1.5 pl-2 rounded-xl bg-neutral-900/80 hover:bg-neutral-850 border border-neutral-800 hover:border-cyan-500/40 transition-all text-left group cursor-pointer"
+                title="Open user profile and account settings"
+              >
                 <img
                   src={currentUser.avatar}
                   alt={currentUser.name}
-                  className="w-8 h-8 rounded-full object-cover ring-2 ring-cyan-500/30"
+                  className="w-7 h-7 rounded-full object-cover ring-2 ring-cyan-500/40 group-hover:ring-cyan-400 transition-all"
                 />
                 <div className="hidden lg:block text-left">
-                  <p className="text-xs font-medium text-neutral-200 leading-tight truncate max-w-[120px]">
+                  <p className="text-xs font-semibold text-neutral-200 group-hover:text-white leading-tight truncate max-w-[110px]">
                     {currentUser.name}
                   </p>
-                  <p className="text-[10px] text-cyan-400 leading-tight">
+                  <p className="text-[10px] text-cyan-400 group-hover:text-cyan-300 leading-tight">
                     {currentUser.channel_handle}
                   </p>
                 </div>
-                <button
-                  onClick={onSignOut}
-                  className="p-1.5 text-neutral-400 hover:text-red-400 hover:bg-neutral-900 rounded-lg transition-colors ml-1"
-                  title="Sign out"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* Guest / Signed Out: Sign In Dropdown Trigger */
-            <div className="relative" ref={authDropdownRef}>
-              <button
-                onClick={() => setShowAuthDropdown(!showAuthDropdown)}
-                className="flex items-center gap-2 px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-neutral-200 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 hover:border-cyan-500/50 rounded-lg transition-all"
-              >
-                <LogIn className="w-4 h-4 text-cyan-400" />
-                <span>Sign in</span>
-                <ChevronDown className="w-3.5 h-3.5 text-neutral-400" />
               </button>
 
-              {/* Magic Link Dropdown Box */}
-              {showAuthDropdown && (
-                <div className="absolute right-0 mt-2 w-80 sm:w-88 p-4 bg-neutral-950 border border-neutral-800 rounded-2xl shadow-2xl z-50 space-y-3">
-                  <div className="flex items-center justify-between pb-2 border-b border-neutral-800/80">
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-cyan-400" />
-                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                        Supabase Magic Link Sign-In
-                      </h4>
-                    </div>
-                  </div>
+              {/* Quick Sign Out button */}
+              <button
+                onClick={onSignOut}
+                className="p-2 text-neutral-400 hover:text-red-400 hover:bg-neutral-900 rounded-lg transition-colors cursor-pointer"
+                title="Sign out"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            /* Guest / Signed Out State: Clear Sign In & Sign Up buttons */
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onOpenSignIn}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-neutral-200 hover:text-white bg-neutral-900 hover:bg-neutral-850 border border-neutral-700/80 hover:border-cyan-500/60 rounded-lg transition-all cursor-pointer"
+                title="Sign in to your Reelport account"
+              >
+                <LogIn className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Sign In</span>
+              </button>
 
-                  <p className="text-[11px] text-neutral-400 leading-relaxed">
-                    No password required. Enter your email and Supabase will email you a secure login link.
-                  </p>
-
-                  <form onSubmit={handleSendMagicLink} className="space-y-3">
-                    <div>
-                      <label className="block text-[11px] text-neutral-300 font-medium mb-1">
-                        Email Address
-                      </label>
-                      <input
-                        type="email"
-                        required
-                        value={emailInput}
-                        onChange={(e) => setEmailInput(e.target.value)}
-                        placeholder="you@example.com"
-                        className="w-full px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-xl text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-cyan-500/70"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isSending || !emailInput.trim()}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 disabled:opacity-50 text-neutral-950 font-bold text-xs rounded-xl shadow-md shadow-cyan-500/20 transition-all"
-                    >
-                      {isSending ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Sending link...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Mail className="w-3.5 h-3.5" />
-                          <span>Send magic link</span>
-                        </>
-                      )}
-                    </button>
-                  </form>
-
-                  {authStatusMessage && (
-                    <div
-                      className={`p-2.5 rounded-xl text-[11px] leading-relaxed flex items-start gap-2 ${
-                        authStatusMessage.type === 'success'
-                          ? 'bg-emerald-950/60 border border-emerald-800/60 text-emerald-300'
-                          : authStatusMessage.type === 'error'
-                          ? 'bg-red-950/60 border border-red-800/60 text-red-300'
-                          : 'bg-neutral-900 border border-neutral-800 text-neutral-300'
-                      }`}
-                    >
-                      {authStatusMessage.type === 'success' && (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-                      )}
-                      <span>{authStatusMessage.text}</span>
-                    </div>
-                  )}
-
-                  <div className="pt-2 border-t border-neutral-800/80 text-[10px] text-neutral-500 leading-normal">
-                    Tip: If testing without a live SMTP provider, you can also sign in with the built-in dev studio account.
-                  </div>
-                </div>
-              )}
+              <button
+                onClick={onOpenSignUp}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-neutral-950 bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-400 hover:from-cyan-300 hover:to-blue-300 rounded-lg shadow-md shadow-cyan-500/20 hover:shadow-cyan-500/40 transition-all cursor-pointer"
+                title="Create a new Reelport creator account"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Sign Up</span>
+              </button>
             </div>
           )}
         </div>

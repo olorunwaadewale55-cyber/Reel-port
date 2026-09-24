@@ -10,6 +10,8 @@ import { ArchitectureModal } from './components/ArchitectureModal';
 import { SettingsModal } from './components/SettingsModal';
 import { AndroidModal } from './components/AndroidModal';
 import { WindowsModal } from './components/WindowsModal';
+import { AuthModal, AuthMode } from './components/AuthModal';
+import { ProfileModal } from './components/ProfileModal';
 import { Video, R2Config, SupabaseConfig, User } from './types';
 import { 
   getStoredVideos, 
@@ -26,6 +28,12 @@ import {
   getCurrentUser,
   setCurrentUser as persistCurrentUser
 } from './lib/storage';
+import { 
+  getSupabaseClient, 
+  getCurrentSupabaseUser, 
+  signOutUser, 
+  mapSupabaseUserToAppUser 
+} from './lib/supabase';
 import { 
   DndContext, 
   closestCenter, 
@@ -77,6 +85,14 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAndroidOpen, setIsAndroidOpen] = useState(false);
   const [isWindowsOpen, setIsWindowsOpen] = useState(false);
+
+  // Supabase Auth modal and User Profile modal state
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthMode>('sign_in');
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [initialRecoveryToken, setInitialRecoveryToken] = useState(false);
+  const [authToast, setAuthToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
+
   const [reorderNotification, setReorderNotification] = useState<string | null>(null);
 
   // Network connection monitor (navigator.onLine)
@@ -85,9 +101,9 @@ export default function App() {
   });
   const [showReconnectedBanner, setShowReconnectedBanner] = useState(false);
 
-  // Authentication state (supports Supabase magic-link & local testing)
+  // Authentication state (supports Supabase Auth & persistent user session)
   const [currentUser, setCurrentUserState] = useState<User | null>(() => {
-    return getCurrentUser() || DEFAULT_USER;
+    return getCurrentUser();
   });
 
   const [r2Config, setR2Config] = useState<R2Config>(getR2Config());
@@ -105,9 +121,54 @@ export default function App() {
     })
   );
 
-  // Load videos on mount & check for URL ?v= deep-link
+  // Detect Supabase recovery tokens in URL on load
   useEffect(() => {
-    const loadedVideos = getStoredVideos();
+    try {
+      const hash = window.location.hash || '';
+      const search = window.location.search || '';
+      if (hash.includes('type=recovery') || search.includes('type=recovery') || hash.includes('access_token')) {
+        setInitialRecoveryToken(true);
+        setAuthMode('reset_password');
+        setIsAuthOpen(true);
+      }
+    } catch {}
+  }, []);
+
+  // Sync Supabase Auth session and subscribe to auth changes
+  useEffect(() => {
+    getCurrentSupabaseUser().then((sbUser) => {
+      if (sbUser) {
+        setCurrentUserState(sbUser);
+        persistCurrentUser(sbUser);
+      }
+    });
+
+    const client = getSupabaseClient();
+    if (client && client.auth) {
+      const { data: { subscription } } = client.auth.onAuthStateChange((event, session) => {
+        if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user) {
+          const appUser = mapSupabaseUserToAppUser(session.user);
+          setCurrentUserState(appUser);
+          persistCurrentUser(appUser);
+        } else if (event === 'SIGNED_OUT') {
+          setCurrentUserState(null);
+          persistCurrentUser(null);
+        } else if (event === 'PASSWORD_RECOVERY') {
+          setInitialRecoveryToken(true);
+          setAuthMode('reset_password');
+          setIsAuthOpen(true);
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
+  }, []);
+
+  // Load videos on mount & refresh likes/saves when currentUser changes
+  useEffect(() => {
+    const loadedVideos = getStoredVideos(currentUser?.id);
     setVideos(loadedVideos);
 
     const params = new URLSearchParams(window.location.search);
@@ -123,7 +184,7 @@ export default function App() {
       const urlParams = new URLSearchParams(window.location.search);
       const id = urlParams.get('v');
       if (id) {
-        const found = getStoredVideos().find((v) => v.id === id);
+        const found = getStoredVideos(currentUser?.id).find((v) => v.id === id);
         if (found) setSelectedVideo(found);
       } else {
         setSelectedVideo(null);
@@ -132,7 +193,7 @@ export default function App() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [currentUser?.id]);
 
   // Monitor connection to the streaming backend via navigator.onLine
   useEffect(() => {
@@ -159,64 +220,28 @@ export default function App() {
     };
   }, []);
 
-  // Handle Magic Link Sign In request
-  const handleSignIn = async (email: string): Promise<{ success: boolean; message: string }> => {
-    const cleanEmail = email.trim().toLowerCase();
-
-    if (supabaseConfig.url && supabaseConfig.anonKey && supabaseConfig.url.includes('supabase.co')) {
-      try {
-        const response = await fetch(`${supabaseConfig.url}/auth/v1/otp`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': supabaseConfig.anonKey,
-            'Authorization': `Bearer ${supabaseConfig.anonKey}`
-          },
-          body: JSON.stringify({
-            email: cleanEmail,
-            create_user: true
-          })
-        });
-
-        if (response.ok) {
-          return {
-            success: true,
-            message: `Magic link dispatched to ${cleanEmail}! Check your inbox and spam folder.`
-          };
-        }
-      } catch (e) {
-        console.warn('Direct Supabase OTP call failed, falling back to instant session', e);
-      }
-    }
-
-    const namePart = cleanEmail.split('@')[0];
-    const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-    const userSession: User = {
-      id: `usr_${Date.now()}`,
-      name: formattedName || 'Broadcaster',
-      email: cleanEmail,
-      avatar: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=256&h=256&q=80`,
-      channel_handle: `@${namePart.toLowerCase() || 'broadcaster'}`,
-      subscribers: 1
-    };
-
-    persistCurrentUser(userSession);
-    setCurrentUserState(userSession);
-
-    return {
-      success: true,
-      message: `Signed in as ${userSession.email}. 'Sign in' replaced by Broadcast & Sign out!`
-    };
+  const handleSignOut = async () => {
+    await signOutUser();
+    setCurrentUserState(null);
+    persistCurrentUser(null);
+    setAuthToast({ message: 'You have been signed out.', type: 'info' });
+    setTimeout(() => setAuthToast(null), 3000);
   };
 
-  const handleSignOut = () => {
-    persistCurrentUser(null);
-    setCurrentUserState(null);
+  const handleOpenUpload = () => {
+    if (!currentUser) {
+      setAuthMode('sign_in');
+      setIsAuthOpen(true);
+      setAuthToast({ message: 'Please sign in or create an account to upload videos to Cloudflare R2.', type: 'info' });
+      setTimeout(() => setAuthToast(null), 4000);
+      return;
+    }
+    setIsUploadOpen(true);
   };
 
   const handleSelectVideo = (video: Video) => {
     incrementVideoViews(video.id);
-    addToWatchHistory(video.id);
+    addToWatchHistory(video.id, currentUser?.id);
     setSelectedVideo(video);
     setVideos((prev) =>
       prev.map((v) => (v.id === video.id ? { ...v, views: v.views + 1 } : v))
@@ -240,23 +265,31 @@ export default function App() {
 
   const handleToggleLike = (videoId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const { isLiked, count } = toggleLikeVideo(videoId);
+    const { isLiked, count } = toggleLikeVideo(videoId, currentUser?.id);
     setVideos((prev) =>
       prev.map((v) => (v.id === videoId ? { ...v, is_liked: isLiked, likes: count } : v))
     );
     if (selectedVideo && selectedVideo.id === videoId) {
       setSelectedVideo((prev) => (prev ? { ...prev, is_liked: isLiked, likes: count } : null));
     }
+    if (!currentUser && isLiked) {
+      setAuthToast({ message: 'Video liked! Sign up or sign in to sync your likes across devices.', type: 'info' });
+      setTimeout(() => setAuthToast(null), 4000);
+    }
   };
 
   const handleToggleSave = (videoId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const isSaved = toggleSaveVideo(videoId);
+    const isSaved = toggleSaveVideo(videoId, currentUser?.id);
     setVideos((prev) =>
       prev.map((v) => (v.id === videoId ? { ...v, is_saved: isSaved } : v))
     );
     if (selectedVideo && selectedVideo.id === videoId) {
       setSelectedVideo((prev) => (prev ? { ...prev, is_saved: isSaved } : null));
+    }
+    if (!currentUser && isSaved) {
+      setAuthToast({ message: 'Video saved to watch later! Sign up or sign in to sync your library.', type: 'info' });
+      setTimeout(() => setAuthToast(null), 4000);
     }
   };
 
@@ -356,13 +389,21 @@ export default function App() {
       <Navbar
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        onOpenUpload={() => setIsUploadOpen(true)}
+        onOpenUpload={handleOpenUpload}
         onOpenArchitecture={() => setIsArchitectureOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenAndroid={() => setIsAndroidOpen(true)}
         onOpenWindows={() => setIsWindowsOpen(true)}
+        onOpenSignIn={() => {
+          setAuthMode('sign_in');
+          setIsAuthOpen(true);
+        }}
+        onOpenSignUp={() => {
+          setAuthMode('sign_up');
+          setIsAuthOpen(true);
+        }}
+        onOpenProfile={() => setIsProfileOpen(true)}
         currentUser={currentUser}
-        onSignIn={handleSignIn}
         onSignOut={handleSignOut}
         onNavigateHome={() => {
           setSelectedVideo(null);
@@ -371,6 +412,26 @@ export default function App() {
         }}
         supabaseConfig={supabaseConfig}
       />
+
+      {/* Floating Auth Notification Toast */}
+      {authToast && (
+        <aside
+          role="status"
+          className="fixed bottom-6 right-6 z-50 max-w-sm p-4 rounded-2xl bg-neutral-900 border border-neutral-700 shadow-2xl text-xs flex items-start gap-3 backdrop-blur-md animate-in slide-in-from-bottom-5 duration-200"
+        >
+          <CheckCircle2 className="w-5 h-5 text-cyan-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 text-neutral-200">
+            <span className="font-semibold text-white">Reelport Auth:</span> {authToast.message}
+          </div>
+          <button
+            onClick={() => setAuthToast(null)}
+            className="text-neutral-400 hover:text-white"
+            aria-label="Dismiss toast"
+          >
+            &times;
+          </button>
+        </aside>
+      )}
 
       {/* Non-intrusive banner for streaming backend connection interruption */}
       {!isOnline && (
@@ -495,22 +556,34 @@ export default function App() {
                     {currentUser ? (
                       <button
                         onClick={() => setIsUploadOpen(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-neutral-950 text-xs font-bold rounded-lg shadow-md shadow-cyan-500/20 transition-all"
+                        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-neutral-950 text-xs font-bold rounded-lg shadow-md shadow-cyan-500/20 transition-all cursor-pointer"
                       >
                         <Radio className="w-4 h-4 text-neutral-950" />
                         <span>Broadcast (Upload to R2)</span>
                       </button>
                     ) : (
-                      <button
-                        onClick={() => {
-                          const signInButton = document.querySelector('header button:has(svg.lucide-log-in)') as HTMLButtonElement;
-                          if (signInButton) signInButton.click();
-                        }}
-                        className="flex items-center gap-2 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-cyan-300 text-xs font-bold rounded-lg border border-cyan-700/60 shadow-md shadow-cyan-500/10 transition-all"
-                      >
-                        <LogIn className="w-4 h-4" />
-                        <span>Sign in to Broadcast</span>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setAuthMode('sign_in');
+                            setIsAuthOpen(true);
+                          }}
+                          className="flex items-center gap-2 px-4 py-2 bg-neutral-900 hover:bg-neutral-850 text-neutral-200 text-xs font-bold rounded-lg border border-neutral-700 hover:border-cyan-500/60 transition-all cursor-pointer"
+                        >
+                          <LogIn className="w-4 h-4 text-cyan-400" />
+                          <span>Sign In</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setAuthMode('sign_up');
+                            setIsAuthOpen(true);
+                          }}
+                          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-neutral-950 text-xs font-bold rounded-lg shadow-md shadow-cyan-500/20 transition-all cursor-pointer"
+                        >
+                          <Zap className="w-4 h-4" />
+                          <span>Sign Up to Broadcast</span>
+                        </button>
+                      </div>
                     )}
 
                     <button
@@ -734,6 +807,40 @@ export default function App() {
         isOpen={isWindowsOpen}
         onClose={() => setIsWindowsOpen(false)}
       />
+
+      {/* Supabase Authentication Modal */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        initialMode={authMode}
+        onClose={() => setIsAuthOpen(false)}
+        onAuthSuccess={(user, message) => {
+          setCurrentUserState(user);
+          persistCurrentUser(user);
+          setAuthToast({ message, type: 'success' });
+          setTimeout(() => setAuthToast(null), 3500);
+        }}
+        supabaseConfig={supabaseConfig}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        initialRecoveryToken={initialRecoveryToken}
+      />
+
+      {/* User Profile / Account Modal */}
+      {currentUser && (
+        <ProfileModal
+          isOpen={isProfileOpen}
+          onClose={() => setIsProfileOpen(false)}
+          currentUser={currentUser}
+          onSignOut={handleSignOut}
+          onSelectVideo={handleSelectVideo}
+          onOpenUpload={() => setIsUploadOpen(true)}
+          onUserUpdated={(updated) => {
+            setCurrentUserState(updated);
+            persistCurrentUser(updated);
+            setAuthToast({ message: 'Profile details saved!', type: 'success' });
+            setTimeout(() => setAuthToast(null), 3000);
+          }}
+        />
+      )}
 
       {/* Vercel Web Analytics */}
       <Analytics />

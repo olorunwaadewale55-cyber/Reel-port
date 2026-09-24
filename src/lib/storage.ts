@@ -173,8 +173,20 @@ export const DEFAULT_SUPABASE_CONFIG: SupabaseConfig = {
   isConfigured: true,
 };
 
-// Storage Helpers
-export function getStoredVideos(): Video[] {
+// Storage Helpers with User-Specific isolation
+function getLikedKey(userId?: string): string {
+  return userId ? `${STORAGE_KEYS.LIKED_VIDEOS}_${userId}` : STORAGE_KEYS.LIKED_VIDEOS;
+}
+
+function getSavedKey(userId?: string): string {
+  return userId ? `${STORAGE_KEYS.SAVED_VIDEOS}_${userId}` : STORAGE_KEYS.SAVED_VIDEOS;
+}
+
+function getHistoryKey(userId?: string): string {
+  return userId ? `${STORAGE_KEYS.WATCH_HISTORY}_${userId}` : STORAGE_KEYS.WATCH_HISTORY;
+}
+
+export function getStoredVideos(userId?: string): Video[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.VIDEOS);
     if (!raw) {
@@ -182,8 +194,8 @@ export function getStoredVideos(): Video[] {
       return INITIAL_VIDEOS;
     }
     const parsed: Video[] = JSON.parse(raw);
-    const likedIds = getLikedVideoIds();
-    const savedIds = getSavedVideoIds();
+    const likedIds = getLikedVideoIds(userId);
+    const savedIds = getSavedVideoIds(userId);
     return parsed.map((v) => ({
       ...v,
       is_liked: likedIds.includes(v.id),
@@ -200,6 +212,28 @@ export function saveVideoRecord(video: Video): void {
   localStorage.setItem(STORAGE_KEYS.VIDEOS, JSON.stringify(updated));
 }
 
+export function deleteVideoRecord(videoId: string, userId: string): boolean {
+  try {
+    const current = getStoredVideos();
+    const target = current.find((v) => v.id === videoId);
+    if (!target) return false;
+    // Allow if uploader matches or admin/demo
+    if (target.uploader_id && target.uploader_id !== userId && userId !== 'usr_nw_dev01') {
+      return false;
+    }
+    const filtered = current.filter((v) => v.id !== videoId);
+    localStorage.setItem(STORAGE_KEYS.VIDEOS, JSON.stringify(filtered));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getUserUploadedVideos(userId: string): Video[] {
+  const videos = getStoredVideos(userId);
+  return videos.filter((v) => v.uploader_id === userId);
+}
+
 export function getVideoById(id: string): Video | undefined {
   const videos = getStoredVideos();
   return videos.find((v) => v.id === id);
@@ -214,13 +248,14 @@ export function incrementVideoViews(id: string): void {
   }
 }
 
-export function toggleLikeVideo(id: string): { isLiked: boolean; count: number } {
-  const likedIds = getLikedVideoIds();
+export function toggleLikeVideo(id: string, userId?: string): { isLiked: boolean; count: number } {
+  const key = getLikedKey(userId);
+  const likedIds = getLikedVideoIds(userId);
   const isCurrentlyLiked = likedIds.includes(id);
   const newLikedIds = isCurrentlyLiked
     ? likedIds.filter((item) => item !== id)
     : [...likedIds, id];
-  localStorage.setItem(STORAGE_KEYS.LIKED_VIDEOS, JSON.stringify(newLikedIds));
+  localStorage.setItem(key, JSON.stringify(newLikedIds));
 
   const videos = getStoredVideos();
   const index = videos.findIndex((v) => v.id === id);
@@ -233,48 +268,54 @@ export function toggleLikeVideo(id: string): { isLiked: boolean; count: number }
   return { isLiked: !isCurrentlyLiked, count: newCount };
 }
 
-export function toggleSaveVideo(id: string): boolean {
-  const savedIds = getSavedVideoIds();
+export function toggleSaveVideo(id: string, userId?: string): boolean {
+  const key = getSavedKey(userId);
+  const savedIds = getSavedVideoIds(userId);
   const isSaved = savedIds.includes(id);
   const newSavedIds = isSaved
     ? savedIds.filter((item) => item !== id)
     : [...savedIds, id];
-  localStorage.setItem(STORAGE_KEYS.SAVED_VIDEOS, JSON.stringify(newSavedIds));
+  localStorage.setItem(key, JSON.stringify(newSavedIds));
   return !isSaved;
 }
 
-export function getLikedVideoIds(): string[] {
+export function getLikedVideoIds(userId?: string): string[] {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.LIKED_VIDEOS) || '[]');
+    const key = getLikedKey(userId);
+    return JSON.parse(localStorage.getItem(key) || '[]');
   } catch {
     return [];
   }
 }
 
-export function getSavedVideoIds(): string[] {
+export function getSavedVideoIds(userId?: string): string[] {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.SAVED_VIDEOS) || '[]');
+    const key = getSavedKey(userId);
+    return JSON.parse(localStorage.getItem(key) || '[]');
   } catch {
     return [];
   }
 }
 
-export function saveSavedVideoOrder(ids: string[]): void {
-  localStorage.setItem(STORAGE_KEYS.SAVED_VIDEOS, JSON.stringify(ids));
+export function saveSavedVideoOrder(ids: string[], userId?: string): void {
+  const key = getSavedKey(userId);
+  localStorage.setItem(key, JSON.stringify(ids));
 }
 
-export function getWatchHistory(): string[] {
+export function getWatchHistory(userId?: string): string[] {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.WATCH_HISTORY) || '[]');
+    const key = getHistoryKey(userId);
+    return JSON.parse(localStorage.getItem(key) || '[]');
   } catch {
     return [];
   }
 }
 
-export function addToWatchHistory(videoId: string): void {
-  const history = getWatchHistory().filter((id) => id !== videoId);
+export function addToWatchHistory(videoId: string, userId?: string): void {
+  const key = getHistoryKey(userId);
+  const history = getWatchHistory(userId).filter((id) => id !== videoId);
   history.unshift(videoId);
-  localStorage.setItem(STORAGE_KEYS.WATCH_HISTORY, JSON.stringify(history.slice(0, 50)));
+  localStorage.setItem(key, JSON.stringify(history.slice(0, 50)));
 }
 
 export function getStoredComments(videoId: string): Comment[] {
@@ -379,6 +420,30 @@ export function setCurrentUser(user: User | null): void {
   } else {
     localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
   }
+}
+
+export const persistCurrentUser = setCurrentUser;
+
+export function updateUserRecord(updated: User): void {
+  persistCurrentUser(updated);
+  // Also update uploader info in videos uploaded by this user in memory/storage
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.VIDEOS);
+    if (raw) {
+      const parsed: Video[] = JSON.parse(raw);
+      const updatedVideos = parsed.map((v) => {
+        if (v.uploader_id === updated.id) {
+          return {
+            ...v,
+            uploader_name: updated.name,
+            uploader_avatar: updated.avatar,
+          };
+        }
+        return v;
+      });
+      localStorage.setItem(STORAGE_KEYS.VIDEOS, JSON.stringify(updatedVideos));
+    }
+  } catch {}
 }
 
 export function saveVideoWatchProgress(videoId: string, currentTime: number, duration: number): void {

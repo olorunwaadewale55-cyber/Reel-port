@@ -47,6 +47,8 @@ export interface User {
   avatar: string;
   channel_handle: string;
   subscribers: number;
+  bio?: string;
+  created_at?: string;
 }
 
 export interface R2Config {
