@@ -74,7 +74,7 @@ jobs:
         with:
           name: Reelport-Android-APK
           path: android/app/build/outputs/apk/**/*.apk
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Upload Play Store AAB Bundle as Workflow Artifact
         uses: actions/upload-artifact@v4
@@ -83,22 +83,23 @@ jobs:
           path: android/app/build/outputs/bundle/**/*.aab
           if-no-files-found: warn
 
-      - name: Create Release with Downloadable APK and Play Store AAB
-        uses: softprops/action-gh-release@v2
+      - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         continue-on-error: true
-        with:
-          tag_name: v1.0.0-android
-          name: "Reelport Android App v1.0.0 (APK + Google Play AAB)"
-          body: |
-            ### Reelport Android Package Releases
-            
-            - **`app-debug.apk`**: Direct installable APK for side-loading onto your Android phone or emulator.
-            - **`app-release.aab`**: Android App Bundle (AAB) optimized for submission to the **Google Play Console**.
-          files: |
-            android/app/build/outputs/apk/**/*.apk
-            android/app/build/outputs/bundle/**/*.aab
-          draft: false
-          prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="v1.0.0-build-${{ github.run_number }}"
+          echo "Publishing release $TAG_NAME..."
+          APK_FILE=$(find android/app/build/outputs/apk/ -name "*.apk" | head -n 1)
+          AAB_FILE=$(find android/app/build/outputs/bundle/ -name "*.aab" | head -n 1)
+          
+          if [ -n "$APK_FILE" ]; then
+            gh release create "$TAG_NAME" "$APK_FILE" ${AAB_FILE:+"$AAB_FILE"} \
+              --title "Reelport Android App v1.0.0 (Build ${{ github.run_number }})" \
+              --notes "### Reelport Android Package Releases (Build ${{ github.run_number }})
+
+- **app-debug.apk**: Direct installable APK for side-loading onto your Android phone or emulator.
+- **app-release.aab**: Android App Bundle (AAB) optimized for submission to the **Google Play Console**." \
+              --latest || echo "Warning: GitHub release step completed with notice, artifacts preserved."
+          fi
