@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -84,6 +86,7 @@ jobs:
       - name: Create Release with Downloadable APK and Play Store AAB
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+        continue-on-error: true
         with:
           tag_name: v1.0.0-android
           name: "Reelport Android App v1.0.0 (APK + Google Play AAB)"
