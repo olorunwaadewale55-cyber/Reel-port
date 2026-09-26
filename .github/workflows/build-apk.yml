@@ -20,23 +20,19 @@ jobs:
         with:
           node-version: 22
 
-      - name: Cache npm dependencies
-        uses: actions/cache@v4
-        if: hashFiles('package-lock.json') != ''
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+      - name: Inspect project structure
+        run: |
+          echo "Current working directory: $(pwd)"
+          ls -la package*.json
 
       - name: Install dependencies
         run: |
           if [ -f package-lock.json ]; then
-            echo "package-lock.json detected. Executing npm ci..."
-            npm ci
+            echo "package-lock.json detected in $(pwd). Executing clean npm ci..."
+            npm ci --no-audit
           else
             echo "No package-lock.json detected. Executing npm install..."
-            npm install
+            npm install --no-audit
           fi
 
       - name: Build web assets and sync Capacitor
